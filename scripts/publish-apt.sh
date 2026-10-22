@@ -8,15 +8,13 @@
 #   GH_TOKEN            token with contents: write on GH_REPO
 #   APT_SUITE           Debian suite of the packages, e.g. trixie
 #   APT_KEEP            versions kept for each package and architecture
-#   APT_GPG_KEY_ID      signing key, already imported into gpg
-#   APT_GPG_PASSPHRASE  passphrase of the signing key
+#   APT_GPG_KEY_ID      signing key without passphrase, already imported into gpg
 #
 # Published versions are never replaced. A package whose version is already
 # in the repository is skipped.
 set -euo pipefail
 
 : "${GH_REPO:?}" "${GH_TOKEN:?}" "${APT_SUITE:?}" "${APT_KEEP:?}" "${APT_GPG_KEY_ID:?}"
-: "${APT_GPG_PASSPHRASE?}"
 if (($# == 0)); then
 	echo "usage: $0 DEB..." >&2
 	exit 2
@@ -33,8 +31,7 @@ aptrepo() {
 }
 
 sign() {
-	gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-		--local-user "$APT_GPG_KEY_ID" "$@" 3<<<"$APT_GPG_PASSPHRASE"
+	gpg --batch --yes --local-user "$APT_GPG_KEY_ID" "$@"
 }
 
 # Name the files as GitHub will name the assets, so that the Filename fields

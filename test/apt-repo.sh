@@ -17,7 +17,7 @@ export PATH=/stack/test/fake-gh:$PATH
 export FAKE_GH_ROOT=$work/releases
 export GNUPGHOME=$work/gnupg
 export GH_REPO=as38656/stack GH_TOKEN=unused
-export APT_SUITE=trixie APT_KEEP=2 APT_GPG_PASSPHRASE=''
+export APT_SUITE=trixie APT_KEEP=2
 mkdir -p "$FAKE_GH_ROOT" "$work/debs"
 mkdir -m 700 "$GNUPGHOME"
 
