@@ -1,0 +1,8 @@
+[submodule "vpp"]
+	path = vpp
+	url = https://github.com/as38656/vpp.git
+	branch = main
+[submodule "zebra-rs"]
+	path = zebra-rs
+	url = https://github.com/as38656/zebra-rs.git
+	branch = main
