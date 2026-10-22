@@ -1,0 +1,63 @@
+#!/bin/bash
+# Stand-in for the GitHub CLI in tests. Keeps each release as a directory
+# $FAKE_GH_ROOT/<tag>/ and supports the commands that publish-apt.sh uses.
+set -euo pipefail
+
+: "${FAKE_GH_ROOT:?}"
+
+fail() {
+	echo "fake gh: $*" >&2
+	exit 1
+}
+
+[[ ${1-} == release ]] || fail "unsupported command: $*"
+command=${2:?} tag=${3:?}
+shift 3
+release=$FAKE_GH_ROOT/$tag
+
+case $command in
+view)
+	[[ -d $release ]]
+	;;
+create)
+	[[ ! -d $release ]] || fail "release $tag already exists"
+	mkdir -p "$release"
+	;;
+download)
+	pattern='' dir=''
+	while (($# > 0)); do
+		case $1 in
+		--pattern) pattern=$2 ;;
+		--dir) dir=$2 ;;
+		*) fail "unsupported download option: $1" ;;
+		esac
+		shift 2
+	done
+	[[ -f $release/$pattern ]] || fail "release $tag has no asset $pattern"
+	cp "$release/$pattern" "$dir/"
+	;;
+upload)
+	[[ -d $release ]] || fail "release $tag does not exist"
+	clobber=false
+	files=()
+	for arg in "$@"; do
+		if [[ $arg == --clobber ]]; then
+			clobber=true
+		else
+			files+=("$arg")
+		fi
+	done
+	for file in "${files[@]}"; do
+		name=$(basename "$file" | sed 's/[^A-Za-z0-9._-]/./g')
+		[[ ! -e $release/$name ]] || $clobber || fail "asset $name already exists"
+		cp "$file" "$release/$name"
+	done
+	;;
+delete-asset)
+	[[ -f $release/${1:?} ]] || fail "release $tag has no asset $1"
+	rm "$release/$1"
+	;;
+*)
+	fail "unsupported release command: $command"
+	;;
+esac
