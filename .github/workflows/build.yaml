@@ -1,0 +1,112 @@
+name: Build (reusable)
+
+# Build the packages of each component and test them together. A component is
+# rebuilt only when its commit or its build files change; otherwise the
+# packages come from the cache.
+
+on:
+  workflow_call:
+
+env:
+  OUT: out/trixie
+
+jobs:
+  vpp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v5
+
+      # Full history: the package version comes from `git describe`, and
+      # vpp-ext-deps counts commits since the release candidate tag.
+      - name: Fetch the vpp submodule
+        run: git submodule update --init vpp
+
+      - name: Cache keys
+        id: key
+        run: |
+          echo "debs=vpp-debs-trixie-$(scripts/component-commit.sh vpp)-${{ hashFiles('Makefile', 'build/builder.Dockerfile', 'build/lib.sh', 'build/vpp.sh') }}" >>"$GITHUB_OUTPUT"
+          echo "ext-deps=vpp-ext-deps-trixie-$(git -C vpp rev-parse HEAD:build/external)" >>"$GITHUB_OUTPUT"
+
+      - name: Cached packages
+        id: debs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OUT }}/vpp
+          key: ${{ steps.key.outputs.debs }}
+
+      - name: Cached vpp-ext-deps
+        if: steps.debs.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: .cache/vpp-ext-deps
+          key: ${{ steps.key.outputs.ext-deps }}
+
+      - name: Free disk space
+        if: steps.debs.outputs.cache-hit != 'true'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Build
+        if: steps.debs.outputs.cache-hit != 'true'
+        run: make vpp CACHE="$PWD/.cache"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: debs-vpp
+          path: ${{ env.OUT }}/vpp/*.deb
+          if-no-files-found: error
+
+  zebra-rs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      # Full history: the package version counts the commits.
+      - name: Fetch the zebra-rs submodule
+        run: git submodule update --init zebra-rs
+
+      - name: Cache key
+        id: key
+        run: |
+          echo "debs=zebra-rs-debs-trixie-$(scripts/component-commit.sh zebra-rs)-${{ hashFiles('Makefile', 'build/builder.Dockerfile', 'build/lib.sh', 'build/zebra-rs.sh') }}" >>"$GITHUB_OUTPUT"
+
+      - name: Cached packages
+        id: debs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OUT }}/zebra-rs
+          key: ${{ steps.key.outputs.debs }}
+
+      - name: Build
+        if: steps.debs.outputs.cache-hit != 'true'
+        run: make zebra-rs CACHE="$PWD/.cache"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: debs-zebra-rs
+          path: ${{ env.OUT }}/zebra-rs/*.deb
+          if-no-files-found: error
+
+  smoke:
+    needs: [vpp, zebra-rs]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch the submodules
+        run: git submodule update --init --depth 1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: debs-vpp
+          path: ${{ env.OUT }}/vpp
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: debs-zebra-rs
+          path: ${{ env.OUT }}/zebra-rs
+
+      - name: Smoke test
+        run: make smoke

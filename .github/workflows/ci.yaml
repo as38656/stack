@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Unit tests
+        run: make unit-test
+
+      - name: shellcheck
+        run: make lint
+
+      - name: APT repository test
+        run: make apt-test
+
+  build:
+    uses: ./.github/workflows/build.yaml
