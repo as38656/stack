@@ -113,12 +113,23 @@ zebra_rs_runs() {
 	zebra-rs --version >/dev/null
 }
 
+# The postrm of the old package runs on an upgrade. VPP binds only the NICs
+# it knows to a user-mode driver, so one bound by hand, like the Solarflare
+# VF, would stay unbound after the upgrade. The container has no such NIC;
+# the output shows whether the script looked for them.
+vpp_upgrade_keeps_pci_drivers() {
+	local output
+	output=$(/var/lib/dpkg/info/vpp.postrm upgrade "$(installed_version vpp)" 2>&1)
+	[[ $output != *PCI* ]]
+}
+
 install_all_packages
 
 check "vpp package is built from $VPP_COMMIT" vpp_package_matches_commit
 check "zebra-rs package is built from $ZEBRA_RS_COMMIT" zebra_rs_package_matches_commit
 check "DPDK plugin includes the sfc driver" dpdk_has_sfc_driver
 check "zebra-rs runs" zebra_rs_runs
+check "a vpp upgrade leaves the PCI drivers alone" vpp_upgrade_keeps_pci_drivers
 
 if start_vpp; then
 	check "running vpp reports the commit" vpp_reports_commit
