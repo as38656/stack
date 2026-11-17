@@ -56,40 +56,50 @@ jobs:
           path: ${{ env.OUT }}/vpp/*.deb
           if-no-files-found: error
 
-  zebra-rs:
+  vpp-etherip:
+    needs: vpp
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
-      # Full history: the package version counts the commits.
-      - name: Fetch the zebra-rs submodule
-        run: git submodule update --init zebra-rs
+      # Full history of vpp-etherip: the package version counts the commits.
+      - name: Fetch the submodules
+        run: |
+          git submodule update --init --depth 1 vpp
+          git submodule update --init vpp-etherip
 
+      # The plugin is built against one vpp, so the vpp commit is in the key.
       - name: Cache key
         id: key
         run: |
-          echo "debs=zebra-rs-debs-trixie-$(scripts/component-commit.sh zebra-rs)-${{ hashFiles('Makefile', 'build/builder.Dockerfile', 'build/lib.sh', 'build/zebra-rs.sh') }}" >>"$GITHUB_OUTPUT"
+          echo "debs=vpp-etherip-debs-trixie-$(scripts/component-commit.sh vpp-etherip)-$(scripts/component-commit.sh vpp)-${{ hashFiles('Makefile', 'build/builder.Dockerfile', 'build/lib.sh', 'build/vpp-etherip.sh') }}" >>"$GITHUB_OUTPUT"
 
       - name: Cached packages
         id: debs
         uses: actions/cache@v4
         with:
-          path: ${{ env.OUT }}/zebra-rs
+          path: ${{ env.OUT }}/vpp-etherip
           key: ${{ steps.key.outputs.debs }}
+
+      - uses: actions/download-artifact@v8
+        if: steps.debs.outputs.cache-hit != 'true'
+        with:
+          name: debs-vpp
+          path: ${{ env.OUT }}/vpp
 
       - name: Build
         if: steps.debs.outputs.cache-hit != 'true'
-        run: make zebra-rs CACHE="$PWD/.cache"
+        run: make vpp-etherip CACHE="$PWD/.cache"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: debs-zebra-rs
-          path: ${{ env.OUT }}/zebra-rs/*.deb
+          name: debs-vpp-etherip
+          path: ${{ env.OUT }}/vpp-etherip/*.deb
           if-no-files-found: error
 
   smoke:
-    needs: [vpp, zebra-rs]
+    needs: [vpp, vpp-etherip]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -105,8 +115,8 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: debs-zebra-rs
-          path: ${{ env.OUT }}/zebra-rs
+          name: debs-vpp-etherip
+          path: ${{ env.OUT }}/vpp-etherip
 
       - name: Smoke test
         run: make smoke

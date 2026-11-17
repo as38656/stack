@@ -3,11 +3,14 @@ OUT := out/$(SUITE)
 CACHE ?= $(HOME)/.cache/as38656-stack
 BUILDER := as38656-stack-builder:$(SUITE)
 
-COMPONENTS := vpp zebra-rs
+COMPONENTS := vpp vpp-etherip
 
 .PHONY: all builder $(COMPONENTS) smoke apt-test unit-test lint clean
 
-all: $(COMPONENTS)
+# vpp-etherip builds against the packages in $(OUT)/vpp, so vpp goes first.
+all:
+	$(MAKE) vpp
+	$(MAKE) vpp-etherip
 
 builder:
 	docker build --build-arg SUITE=$(SUITE) -t $(BUILDER) -f build/builder.Dockerfile build
@@ -19,13 +22,11 @@ $(COMPONENTS): builder
 		-e HOST_UID=$$(id -u) -e HOST_GID=$$(id -g) \
 		$(BUILDER) /stack/build/$@.sh
 
-# The zebra-rs binary gets file capabilities on install. The kernel refuses to
-# run it unless the container may hold them too.
 smoke:
-	docker run --rm --cap-add NET_ADMIN --cap-add NET_BROADCAST \
+	docker run --rm \
 		-v $(CURDIR):/stack:ro -v $(CURDIR)/$(OUT):/out:ro \
 		-e VPP_COMMIT=$$(scripts/component-commit.sh vpp) \
-		-e ZEBRA_RS_COMMIT=$$(scripts/component-commit.sh zebra-rs) \
+		-e VPP_ETHERIP_COMMIT=$$(scripts/component-commit.sh vpp-etherip) \
 		debian:$(SUITE) /stack/test/smoke.sh
 
 apt-test:

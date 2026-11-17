@@ -3,11 +3,11 @@
 #
 # Runs as root in a fresh debian container (see `make smoke`):
 #   /out               built packages, one directory per component, read-only
-#   VPP_COMMIT         commit the vpp packages must be built from
-#   ZEBRA_RS_COMMIT    commit the zebra-rs package must be built from
+#   VPP_COMMIT          commit the vpp packages must be built from
+#   VPP_ETHERIP_COMMIT  commit the vpp-plugin-etherip package must be built from
 set -euo pipefail
 
-: "${VPP_COMMIT:?}" "${ZEBRA_RS_COMMIT:?}"
+: "${VPP_COMMIT:?}" "${VPP_ETHERIP_COMMIT:?}"
 
 PLUGIN_DIR=/usr/lib/x86_64-linux-gnu/vpp_plugins
 VPP_CLI=/run/vpp/cli.sock
@@ -85,8 +85,16 @@ vpp_package_matches_commit() {
 	[[ $(installed_version vpp) == *"~g${VPP_COMMIT:0:7}"* ]]
 }
 
-zebra_rs_package_matches_commit() {
-	[[ $(installed_version zebra-rs) == *"+as38656."*".g${ZEBRA_RS_COMMIT:0:12}" ]]
+etherip_package_matches_commit() {
+	[[ $(installed_version vpp-plugin-etherip) == *".g${VPP_ETHERIP_COMMIT:0:12}+vpp"* ]]
+}
+
+# The plugin uses VPP internals, so it works only with the VPP it was built
+# against.
+etherip_package_needs_same_vpp() {
+	local depends
+	depends=$(dpkg-query --showformat='${Depends}' --show vpp-plugin-etherip)
+	grep -q "vpp (= $(installed_version vpp))" <<<"$depends"
 }
 
 # Command output is captured before grep: with pipefail, `cmd | grep -q` fails
@@ -109,8 +117,17 @@ vpp_loaded_linux_cp() {
 	grep -q linux_cp_plugin.so <<<"$plugins" && grep -q linux_nl_plugin.so <<<"$plugins"
 }
 
-zebra_rs_runs() {
-	zebra-rs --version >/dev/null
+vpp_loaded_etherip() {
+	local plugins
+	plugins=$(vppctl -s "$VPP_CLI" show plugins)
+	grep -q etherip_plugin.so <<<"$plugins"
+}
+
+vpp_creates_etherip_tunnel() {
+	local tunnels
+	vppctl -s "$VPP_CLI" create etherip tunnel src 192.0.2.1 dst 192.0.2.2 instance 7 >/dev/null
+	tunnels=$(vppctl -s "$VPP_CLI" show etherip tunnel)
+	grep -q "etherip7 instance 7 src 192.0.2.1 dst 192.0.2.2" <<<"$tunnels"
 }
 
 # The postrm of the old package runs on an upgrade. VPP binds only the NICs
@@ -126,14 +143,16 @@ vpp_upgrade_keeps_pci_drivers() {
 install_all_packages
 
 check "vpp package is built from $VPP_COMMIT" vpp_package_matches_commit
-check "zebra-rs package is built from $ZEBRA_RS_COMMIT" zebra_rs_package_matches_commit
+check "vpp-plugin-etherip package is built from $VPP_ETHERIP_COMMIT" etherip_package_matches_commit
+check "vpp-plugin-etherip needs the same vpp version" etherip_package_needs_same_vpp
 check "DPDK plugin includes the sfc driver" dpdk_has_sfc_driver
-check "zebra-rs runs" zebra_rs_runs
 check "a vpp upgrade leaves the PCI drivers alone" vpp_upgrade_keeps_pci_drivers
 
 if start_vpp; then
 	check "running vpp reports the commit" vpp_reports_commit
 	check "vpp loads linux-cp and linux-nl" vpp_loaded_linux_cp
+	check "vpp loads the EtherIP plugin" vpp_loaded_etherip
+	check "vpp creates an EtherIP tunnel" vpp_creates_etherip_tunnel
 else
 	check "vpp starts" false
 fi
